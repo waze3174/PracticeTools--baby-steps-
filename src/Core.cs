@@ -3,7 +3,7 @@ using System.IO;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(PracticeTools.Core), "PracticeTools", "1.0.0", "waze3174")]
+[assembly: MelonInfo(typeof(PracticeTools.Core), "PracticeTools", "1.0.1", "waze3174")]
 [assembly: MelonGame]
 [assembly: MelonOptionalDependencies("BabyStepsMenuLib", "BabyStepsMultiplayerClient", "BabyStepsNetworking")]
 

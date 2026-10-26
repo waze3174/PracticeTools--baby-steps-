@@ -47,7 +47,7 @@ with my other mods rulebook or falltracker also installed, the pages open from o
 
 ## timer and splits
 
-the timer is the game's own play time, the same one the ending shows. it sits top left (out of the minimap's way) and hides while paused, like the speed and fps (bottom right).
+the timer is the game's own play time, the same one the ending shows. it sits top left (out of the minimap's way) and hides while paused, like the speed and fps (bottom right). when a run ends the final times stay up for 15 seconds over the ending.
 
 splits are automatic. a run starts with a new game; each split ends when nate reaches a campfire, the last one at the credits:
 
@@ -66,7 +66,7 @@ your best run and best segments (gold) are saved, the splits show ahead / behind
 
 ## auto skip cutscenes
 
-skips each cutscene as it starts, the same way winning the skip minigame does, so you never play the minigame. the hat scenes play as normal.
+skips each cutscene as it starts, the same way winning the skip minigame does, so you never play the minigame. the hat scenes and the ending (the map with your path, then the credits) play as normal.
 
 ## install
 

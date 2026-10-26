@@ -29,7 +29,10 @@ static class Hud
         bool inGame = PlayerMovement.me != null;
         // timer, splits, speed and fps stay off the pause menu
         bool playing = inGame && !(Menu.me != null && Menu.me.paused);
-        Timer(playing);
+        // a finished run stays up over the ending for a while, whatever covers or hides the HUD
+        bool linger = Splits.Finished && Time.unscaledTime - Splits.FinishedAt < LingerTime;
+        canvas.sortingOrder = linger ? 32000 : 440;
+        Timer(playing, linger);
         Info(playing);
         Arrows(inGame);
         flash.gameObject.SetActive(Time.unscaledTime < flashUntil);
@@ -39,17 +42,21 @@ static class Hud
 
     // ---- timer and splits ----
 
-    static void Timer(bool inGame)
+    const float LingerTime = 15f;
+
+    static void Timer(bool inGame, bool linger)
     {
-        bool show = inGame && Core.ShowTimer.Value && Splits.Now >= 0f;
+        var end = Splits.List.Count > 0 ? Splits.List[Splits.List.Count - 1] : null;
+        linger &= end != null && end.Time >= 0f;
+        bool show = Core.ShowTimer.Value && (linger || inGame && Splits.Now >= 0f);
         // scaled from the top left corner; the splits sit right under the timer, or at its place without it
         float k = Mathf.Clamp(Core.TimerScale.Value, 0.5f, 2f);
         timer.rectTransform.localScale = splits.rectTransform.localScale = new Vector3(k, k, 1f);
         splits.rectTransform.anchoredPosition = new Vector2(30f, -20f - (Core.ShowTimer.Value ? 58f * k : 0f));
         timer.gameObject.SetActive(show);
-        if (show) timer.text = Splits.Fmt(Splits.Now);
+        if (show) timer.text = Splits.Fmt(linger ? end.Time : Splits.Now);
 
-        bool showSplits = inGame && Core.ShowSplits.Value && Splits.Now >= 0f;
+        bool showSplits = Core.ShowSplits.Value && (linger || inGame && Splits.Now >= 0f);
         splits.gameObject.SetActive(showSplits);
         if (!showSplits) return;
         var sb = new StringBuilder();

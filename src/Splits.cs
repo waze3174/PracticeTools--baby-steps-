@@ -22,6 +22,7 @@ static class Splits
     internal static int Current;          // the split being run
     internal static bool Running;         // a run from a new game is going
     internal static bool Finished;
+    internal static float FinishedAt = -100f;   // unscaled time the run ended, for the HUD to keep it up a while
     internal static float Now;            // play time this frame, -1 when there's none
     static float last = -1f;
     static int runSlot = -1;          // the save slot the run is on
@@ -110,12 +111,14 @@ static class Splits
         Reach(end);
     }
 
+    internal static EndCredits Credits;   // the ending (the map with your path, then the credits), once it has started
+
     [HarmonyPatch(typeof(EndCredits), "Update")]
     static class CreditsPatch
     {
         static void Postfix(EndCredits __instance)
         {
-            try { if (__instance.started) OnCredits(); } catch (Exception e) { Core.Inst.LoggerInstance.Error("splits: " + e.Message); }
+            try { if (__instance.started) { Credits = __instance; OnCredits(); } } catch (Exception e) { Core.Inst.LoggerInstance.Error("splits: " + e.Message); }
         }
     }
 
@@ -215,6 +218,7 @@ static class Splits
         if (Current >= List.Count)
         {
             Finished = true;
+            FinishedAt = UnityEngine.Time.unscaledTime;
             var end = List[List.Count - 1];
             if (end.Pb < 0f || end.Time < end.Pb) foreach (var x in List) x.Pb = x.Time;
         }
