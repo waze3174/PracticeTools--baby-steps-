@@ -250,7 +250,10 @@ static class Splits
     {
         string sign = d < 0f ? "-" : "+";
         d = Mathf.Abs(d);
-        return d >= 60f ? sign + Fmt(d) : sign + d.ToString("0.0", CultureInfo.InvariantCulture);
+        if (d < 60f) return sign + d.ToString("0.0", CultureInfo.InvariantCulture);
+        // short: +2:43.2 (+1:02:43 past an hour)
+        int h = (int)(d / 3600f), m = (int)(d % 3600f / 60f), sec = (int)(d % 60f), ds = (int)(d * 10f % 10f);
+        return h > 0 ? $"{sign}{h}:{m:D2}:{sec:D2}" : $"{sign}{m}:{sec:D2}.{ds}";
     }
 
     [HarmonyPatch(typeof(Menu), nameof(Menu.CampFireCo))]

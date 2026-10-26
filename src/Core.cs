@@ -3,7 +3,7 @@ using System.IO;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(PracticeTools.Core), "PracticeTools", "1.0.2", "waze3174")]
+[assembly: MelonInfo(typeof(PracticeTools.Core), "PracticeTools", "1.0.3", "waze3174")]
 [assembly: MelonGame]
 [assembly: MelonOptionalDependencies("BabyStepsMenuLib", "BabyStepsMultiplayerClient", "BabyStepsNetworking")]
 
@@ -18,7 +18,7 @@ public class Core : MelonMod
 {
     internal static Core Inst;
     internal static MelonPreferences_Category Cat;
-    internal static MelonPreferences_Entry<bool> CarryMode, ShowTimer, ShowSplits, ShowGold, AutoSkip, Arrow, PlayerArrow, InputDisplay, ShowSpeed, ShowFps;
+    internal static MelonPreferences_Entry<bool> CarryMode, ShowTimer, ShowSplits, ShowDelta, ShowTime, ShowBestRun, ShowGold, AutoSkip, Arrow, PlayerArrow, InputDisplay, ShowSpeed, ShowFps;
     internal static MelonPreferences_Entry<float> SlowMo, TimerScale;
     internal static MelonPreferences_Entry<string> ArrowItem, ArrowPlayer;
     internal static string Dir;
@@ -34,7 +34,10 @@ public class Core : MelonMod
         ShowTimer = Cat.CreateEntry("ShowTimer", false, "Show timer", "The game's own play time (the one the ending shows), top right.");
         TimerScale = Cat.CreateEntry("TimerScale", 1f, "Timer size", "Size of the timer and splits, 0.5 to 2.");
         ShowSplits = Cat.CreateEntry("ShowSplits", false, "Show splits", "Splits under the timer, split automatically at each new campfire and at the end. Compared to your best run.");
-        ShowGold = Cat.CreateEntry("ShowGold", true, "Best times", "Your best segment for each split, in gold next to it, and your best run and sum of best under the splits.");
+        ShowDelta = Cat.CreateEntry("ShowDelta", true, "+/-", "How far ahead (green) or behind (red) your best run you are at each split, live on the split you're on.");
+        ShowTime = Cat.CreateEntry("ShowTime", true, "Time", "This run's time at each split.");
+        ShowBestRun = Cat.CreateEntry("ShowBestRun", true, "Best run", "Your best run's time at each split, in a column next to this run's, and its final time under the splits.");
+        ShowGold = Cat.CreateEntry("ShowGold", true, "Best segments", "Your best segment for each split, in gold, and the sum of best under the splits.");
         AutoSkip = Cat.CreateEntry("AutoSkip", false, "Auto skip cutscenes", "Skips cutscenes as they start, without the skip minigame (not the hat ones).");
         Arrow = Cat.CreateEntry("Arrow", false, "Guide arrow", "An arrow on screen pointing to the item picked in ArrowItem.");
         ArrowItem = Cat.CreateEntry("ArrowItem", "", "Arrow item", "The item the arrow points to (picked on the menu page).");

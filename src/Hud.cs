@@ -61,45 +61,60 @@ static class Hud
         if (!showSplits) return;
         var sb = new StringBuilder();
         if (!Splits.Running && !Splits.Finished) sb.Append("<alpha=#80>splits start with a new game<alpha=#FF>\n");
+        // columns: split | +/- against the best run | this run's time | the best run's time there | the best segment
+        // in gold, each with a toggle; the shown ones sit 130 apart (room for 1:46:05.00 in bold)
         var list = Splits.List;
+        bool showDelta = Core.ShowDelta.Value, showTime = Core.ShowTime.Value, bestRun = Core.ShowBestRun.Value, bestSeg = Core.ShowGold.Value;
+        int x = 240;
+        int deltaPos = showDelta ? x : -1; if (showDelta) x += 130;
+        int timePos = showTime ? x : -1; if (showTime) x += 130;
+        int runPos = bestRun ? x : -1; if (bestRun) x += 130;
+        int segPos = bestSeg ? x : -1;
+        const string Dim = "#9A9A9A", Gold = "#FFD84A", Ahead = "#5CE05C", Behind = "#E05C5C";
+        if (showDelta || showTime || bestRun || bestSeg)
+        {
+            sb.Append($"<size=70%><color={Dim}>");
+            if (showDelta) sb.Append($"<pos={deltaPos}>+/-");
+            if (showTime) sb.Append($"<pos={timePos}>time");
+            if (bestRun) sb.Append($"<pos={runPos}>best run");
+            if (bestSeg) sb.Append($"<pos={segPos}>best seg");
+            sb.Append("</color></size>\n");
+        }
         for (int i = 0; i < list.Count; i++)
         {
             var s = list[i];
             bool cur = Splits.Running && !Splits.Finished && i == Splits.Current;
-            string delta = "";
-            string time;
+            string delta = "", time = "";
             if (s.Skipped && s.Time < 0f)
-                time = "skipped";
+                time = $"<color={Dim}>skipped</color>";
             else if (s.Time >= 0f)
             {
-                time = Splits.Fmt(s.Time);
-                if (s.Pb >= 0f)
-                {
-                    float d = s.Time - s.Pb;
-                    float seg = Splits.Segment(i);
-                    // gold: best segment ever, green ahead, red behind
-                    string col = seg >= 0f && s.Gold >= 0f && seg <= s.Gold + 0.001f ? "#FFD84A" : d < 0f ? "#5CE05C" : "#E05C5C";
-                    delta = $"<color={col}>{Splits.Delta(d)}</color>  ";
-                }
+                // the time and its difference share a colour: gold for a best segment, green ahead, red behind
+                float seg = Splits.Segment(i);
+                bool isGold = seg >= 0f && s.Gold >= 0f && seg <= s.Gold + 0.001f;
+                string col = isGold ? Gold : s.Pb < 0f ? "#FFFFFF" : s.Time < s.Pb ? Ahead : Behind;
+                time = $"<color={col}>{Splits.Fmt(s.Time)}</color>";
+                if (s.Pb >= 0f) delta = $"<color={col}>{Splits.Delta(s.Time - s.Pb)}</color>";
             }
-            else
-            {
-                time = s.Pb >= 0f ? Splits.Fmt(s.Pb) : "-";
-                // running behind the best run on the current split: show it live
-                if (cur && s.Pb >= 0f && Splits.Now > s.Pb) delta = $"<color=#E05C5C>{Splits.Delta(Splits.Now - s.Pb)}</color>  ";
-            }
-            // the best segment for this split, in gold
-            string gold = Core.ShowGold.Value && s.Gold >= 0f ? $"   <color=#FFD84A>{Splits.Fmt(s.Gold)}</color>" : "";
-            string line = $"{s.Name}   {delta}{time}{gold}";
-            sb.Append(cur ? $"<color=#FFFFFF><b>{line}</b></color>" : s.Time >= 0f ? line : $"<alpha=#B0>{line}<alpha=#FF>").Append('\n');
+            // running behind the best run on the current split: show it live
+            else if (cur && s.Pb >= 0f && Splits.Now > s.Pb) delta = $"<color={Behind}>{Splits.Delta(Splits.Now - s.Pb)}</color>";
+
+            sb.Append(cur ? $"<b>{s.Name}</b>" : s.Time >= 0f || s.Skipped ? s.Name : $"<color=#B0B0B0>{s.Name}</color>");
+            if (showDelta) sb.Append($"<pos={deltaPos}>{delta}");
+            // a skipped split says so in the time column, or the +/- one without it
+            if (showTime) sb.Append($"<pos={timePos}>{time}");
+            else if (s.Skipped && s.Time < 0f && showDelta) sb.Append($"<pos={deltaPos}><color={Dim}>skipped</color>");
+            if (bestRun) sb.Append($"<pos={runPos}><color={Dim}>{(s.Pb >= 0f ? Splits.Fmt(s.Pb) : "-")}</color>");
+            if (bestSeg) sb.Append($"<pos={segPos}><color={Gold}>{(s.Gold >= 0f ? Splits.Fmt(s.Gold) : "-")}</color>");
+            sb.Append('\n');
         }
-        if (Core.ShowGold.Value)
+        if (bestRun || bestSeg)
         {
             // best run, and the best possible run from the best segments
             float sob = 0f;
             foreach (var s in list) { if (s.Gold < 0f) { sob = -1f; break; } sob += s.Gold; }
-            if (end != null && end.Pb >= 0f) sb.Append($"<alpha=#B0>best run {Splits.Fmt(end.Pb)}<alpha=#FF>\n");
-            if (sob >= 0f) sb.Append($"<alpha=#B0>sum of best <color=#FFD84A>{Splits.Fmt(sob)}</color><alpha=#FF>\n");
+            if (bestRun && end != null && end.Pb >= 0f) sb.Append($"<color={Dim}>best run<pos={runPos}>{Splits.Fmt(end.Pb)}</color>\n");
+            if (bestSeg && sob >= 0f) sb.Append($"<color={Dim}>sum of best<pos={segPos}></color><color={Gold}>{Splits.Fmt(sob)}</color>\n");
         }
         splits.text = sb.ToString();
     }
@@ -239,7 +254,7 @@ static class Hud
         scaler.matchWidthOrHeight = 1f;
 
         timer = Text("timer", src, 44, TextAlignmentOptions.TopLeft, new Vector2(0f, 1f), new Vector2(30f, -20f), new Vector2(600f, 60f));
-        splits = Text("splits", src, 22, TextAlignmentOptions.TopLeft, new Vector2(0f, 1f), new Vector2(30f, -78f), new Vector2(700f, 400f));
+        splits = Text("splits", src, 22, TextAlignmentOptions.TopLeft, new Vector2(0f, 1f), new Vector2(30f, -78f), new Vector2(800f, 400f));
         info = Text("info", src, 24, TextAlignmentOptions.BottomRight, new Vector2(1f, 0f), new Vector2(-30f, 30f), new Vector2(400f, 120f));
         flash = Text("flash", src, 30, TextAlignmentOptions.Center, new Vector2(0.5f, 0.5f), new Vector2(0f, 150f), new Vector2(800f, 50f));
         flash.color = new Color(1f, 0.85f, 0.4f, 0.9f);

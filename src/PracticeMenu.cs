@@ -60,13 +60,10 @@ static class PracticeMenu
         built = true;
         Toggle(tab, "Show timer", Core.ShowTimer);
         Toggle(tab, "Show splits", Core.ShowSplits);
-        Toggle(tab, "Best times", Core.ShowGold);
-        sizeSlider = Slider(tab, "SIZE", 0.5f, 2f, Mathf.Clamp(Core.TimerScale.Value, 0.5f, 2f), v =>
-        {
-            Core.TimerScale.Value = Mathf.Round(v * 20f) / 20f;   // steps of 0.05
-            Core.Changed();
-            Labels();
-        }, false);
+        Toggle(tab, "+/-", Core.ShowDelta);
+        Toggle(tab, "Time", Core.ShowTime);
+        Toggle(tab, "Best run", Core.ShowBestRun);
+        Toggle(tab, "Best segments", Core.ShowGold);
     }
 
     static void FinderTab(MenuInjectionLibrary.TabBuilder tab)
@@ -143,6 +140,13 @@ static class PracticeMenu
     {
         built = true;
         Toggle(tab, "Auto skip cutscenes", Core.AutoSkip);
+        // the timer tab is full (4 rows)
+        sizeSlider = Slider(tab, "TIMER SIZE", 0.5f, 2f, Mathf.Clamp(Core.TimerScale.Value, 0.5f, 2f), v =>
+        {
+            Core.TimerScale.Value = Mathf.Round(v * 20f) / 20f;   // steps of 0.05
+            Core.Changed();
+            Labels();
+        }, false);
         Button(tab, "Forget best times", () => { Splits.ResetBests(); Hud.Flash("BEST TIMES CLEARED"); });
     }
 
@@ -200,7 +204,7 @@ static class PracticeMenu
             SetLabel(campSlider, n == 0 ? "CAMPFIRE: (load a save)" : $"CAMPFIRE {i}: {(string.IsNullOrEmpty(title) ? "?" : title.ToUpperInvariant())}");
         }
         if (sizeSlider != null)
-            SetLabel(sizeSlider, "SIZE ×" + Core.TimerScale.Value.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+            SetLabel(sizeSlider, "TIMER SIZE ×" + Core.TimerScale.Value.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
                 + "  <alpha=#80><size=70%>NORMAL ×1.00</size><alpha=#FF>");
         if (speedSlider != null)
             SetLabel(speedSlider, "GAME SPEED ×" + Core.SlowMo.Value.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
