@@ -88,8 +88,18 @@ static class Hud
                 // running behind the best run on the current split: show it live
                 if (cur && s.Pb >= 0f && Splits.Now > s.Pb) delta = $"<color=#E05C5C>{Splits.Delta(Splits.Now - s.Pb)}</color>  ";
             }
-            string line = $"{s.Name}   {delta}{time}";
+            // the best segment for this split, in gold
+            string gold = Core.ShowGold.Value && s.Gold >= 0f ? $"   <color=#FFD84A>{Splits.Fmt(s.Gold)}</color>" : "";
+            string line = $"{s.Name}   {delta}{time}{gold}";
             sb.Append(cur ? $"<color=#FFFFFF><b>{line}</b></color>" : s.Time >= 0f ? line : $"<alpha=#B0>{line}<alpha=#FF>").Append('\n');
+        }
+        if (Core.ShowGold.Value)
+        {
+            // best run, and the best possible run from the best segments
+            float sob = 0f;
+            foreach (var s in list) { if (s.Gold < 0f) { sob = -1f; break; } sob += s.Gold; }
+            if (end != null && end.Pb >= 0f) sb.Append($"<alpha=#B0>best run {Splits.Fmt(end.Pb)}<alpha=#FF>\n");
+            if (sob >= 0f) sb.Append($"<alpha=#B0>sum of best <color=#FFD84A>{Splits.Fmt(sob)}</color><alpha=#FF>\n");
         }
         splits.text = sb.ToString();
     }

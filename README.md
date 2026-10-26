@@ -34,12 +34,12 @@ everything else is on the **PRACTICE** page in the pause menu.
 
 needs BabyStepsMenuLib (see install). without it, everything is in the cfg file.
 
-- **timer**: show timer, show splits, size, forget best times
+- **timer**: show timer, show splits, best times (on / off), size
 - **finder**: pick any item in the game, an arrow on screen points to it with the distance (live while it's loaded, its last spot when it isn't), and **bring it here** puts it in front of nate
 - **teleport**: pick a campfire and go there, or back to your saved spot
 - **display**: input display (the game's own stick and trigger graph), speed in m/s, fps, game speed (slow motion down to x0.1)
 - **fly**: free cam or carry nate
-- **misc**: auto skip cutscenes
+- **misc**: auto skip cutscenes, forget best times
 - **controls**: change the keys and buttons above
 - **multiplayer**: pick a player, an arrow in their colour points to them, teleport next to them (needs the baby steps multiplayer mod)
 
@@ -62,7 +62,7 @@ splits are automatic. a run starts with a new game; each split ends when nate re
 | the rolling hills | ep 7: the quarry |
 | the snowy area | the credits |
 
-your best run and best segments (gold) are saved, the splits show ahead / behind in green / red. names and campfires can be changed in `UserData/PracticeTools/splits.txt` (`name|campfire|...`, `end` = the credits). skip a campfire (glitch or not) and its split shows as skipped with no time or best segment. the next one you reach gets the time since your last split, and can still get a best segment. the run is kept, so if the game crashes (or you quit) just load the same save and it carries on from there. loading a save mid-game doesn't start a run.
+your best run and best segments (gold) are saved, the splits show ahead / behind in green / red. with **best times** on (timer tab, on by default) each split also shows its best segment in gold, and your best run and sum of best sit under the splits. names and campfires can be changed in `UserData/PracticeTools/splits.txt` (`name|campfire|...`, `end` = the credits). skip a campfire (glitch or not) and its split shows as skipped with no time or best segment. the next one you reach gets the time since your last split, and can still get a best segment. the run is kept, so if the game crashes (or you quit) just load the same save and it carries on from there. loading a save mid-game doesn't start a run.
 
 ## auto skip cutscenes
 

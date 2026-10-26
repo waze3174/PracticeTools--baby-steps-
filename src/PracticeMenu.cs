@@ -60,13 +60,13 @@ static class PracticeMenu
         built = true;
         Toggle(tab, "Show timer", Core.ShowTimer);
         Toggle(tab, "Show splits", Core.ShowSplits);
+        Toggle(tab, "Best times", Core.ShowGold);
         sizeSlider = Slider(tab, "SIZE", 0.5f, 2f, Mathf.Clamp(Core.TimerScale.Value, 0.5f, 2f), v =>
         {
             Core.TimerScale.Value = Mathf.Round(v * 20f) / 20f;   // steps of 0.05
             Core.Changed();
             Labels();
         }, false);
-        Button(tab, "Forget best times", () => { Splits.ResetBests(); Hud.Flash("BEST TIMES CLEARED"); });
     }
 
     static void FinderTab(MenuInjectionLibrary.TabBuilder tab)
@@ -143,6 +143,7 @@ static class PracticeMenu
     {
         built = true;
         Toggle(tab, "Auto skip cutscenes", Core.AutoSkip);
+        Button(tab, "Forget best times", () => { Splits.ResetBests(); Hud.Flash("BEST TIMES CLEARED"); });
     }
 
     // one row per control: press it, then the new key (or, on a gamepad, the new button; B stays the modifier)
