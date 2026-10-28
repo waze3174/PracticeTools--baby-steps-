@@ -4,12 +4,13 @@ using UnityEngine;
 
 namespace PracticeTools;
 
-// mods whose features are in here: with both installed they'd double up (two fly cams on F1, two timers, two skippers).
+// mods whose features are in here: with both installed they'd double up (two fly cams on F1, two timers, two skippers,
+// two sunglasses toggles, two blinkers).
 // once every mod has started, they're switched off inside MelonLoader for this session; their files stay as they are,
 // so removing PracticeTools brings them back
 static class Takeover
 {
-    static readonly string[] Names = { "FlyAndQuickSave", "BBSIGT", "CutsceneSkipperBBS" };
+    static readonly string[] Names = { "FlyAndQuickSave", "BBSIGT", "CutsceneSkipperBBS", "SunglassessToggle", "SunglassesToggle", "BBSItemBlinker" };
 
     internal static void Run(MelonLogger.Instance log)
     {

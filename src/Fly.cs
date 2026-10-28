@@ -1,6 +1,4 @@
 using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
 using HarmonyLib;
 using Il2Cpp;
 using UnityEngine;
@@ -22,7 +20,6 @@ static class Fly
     {
         // BlockKeys is patched with the rest of the [HarmonyPatch] classes by MelonLoader
         h.Patch(AccessTools.Method(typeof(Menu), nameof(Menu.Teleport)), prefix: new HarmonyMethod(typeof(Fly), nameof(TeleportPrefix)));
-        LoadSpots();
     }
 
     internal static void Update()
@@ -33,12 +30,14 @@ static class Fly
 
         if (Binds.Pressed(Binds.Fly))
         {
+            bool aim = Carrying && pm.flyCam != null;
+            var flyRot = aim ? pm.flyCam.transform.rotation : Quaternion.identity;
             if (Carrying) Drop(pm);
             pm.ToggleFlyCam(); Flying = pm.inFlyCam;
             if (Flying && Core.CarryMode.Value) Pick(pm);
+            if (aim && !Flying) AimLike(pm, flyRot);
         }
-        else if (Binds.Pressed(Binds.Save)) SaveSpot(pm);
-        else if (Binds.Pressed(Binds.Load)) LoadSpot();
+        AimTick(pm);
 
         if (Flying && pm.flyCam != null) { Move(pm.flyCam.transform); Scroll(pm, true); if (Carrying) Carry(pm); }
         else Scroll(pm, false);
@@ -67,15 +66,30 @@ static class Fly
         bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
         bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
         float mult = shift && ctrl ? 7f : ctrl ? 5f : shift ? 2f : 1f;
-        t.position += t.TransformDirection(dir) * (BaseSpeed * speedMult * mult * Time.unscaledDeltaTime);
+        t.position += Along(t, dir) * (BaseSpeed * speedMult * mult * Time.unscaledDeltaTime);
 
         // gamepad: left stick moves, RT up / LT down, L3 held 5x faster, right stick looks (the game's fly cam only
         // reads the mouse; it takes its angles back from the transform each frame, so turning it here stays)
         var pad = new Vector3(Binds.Axis("Left Stick X"), Binds.Axis("Right Trigger") - Binds.Axis("Left Trigger"), Binds.Axis("Left Stick Y"));
         if (pad.sqrMagnitude > 1f) pad.Normalize();
         float padMult = Binds.Button("Left Stick Button") ? 5f : 1f;
-        t.position += t.TransformDirection(pad) * (BaseSpeed * speedMult * padMult * Time.unscaledDeltaTime);
-        float lx = Binds.Axis("Right Stick X"), ly = Binds.Axis("Right Stick Y");
+        t.position += Along(t, pad) * (BaseSpeed * speedMult * padMult * Time.unscaledDeltaTime);
+
+        // the game's camera invert settings: the fly cam turns with the mouse as is, so an inverted axis gets turned
+        // back twice as far here; the stick is read here, so it's just flipped
+        var pm = PlayerMovement.me;
+        bool invX = pm != null && pm.invertX, invY = pm != null && pm.invertY;
+        if ((invX || invY) && Menu.me != null && !Menu.me.paused)
+        {
+            float mx = invX ? Input.GetAxis("Mouse X") : 0f, my = invY ? Input.GetAxis("Mouse Y") : 0f;
+            if (mx != 0f || my != 0f)
+            {
+                var e = t.eulerAngles;
+                float pitch = e.x > 180f ? e.x - 360f : e.x;
+                t.eulerAngles = new Vector3(Mathf.Clamp(pitch + 2f * my, -89f, 89f), e.y - 2f * mx, e.z);
+            }
+        }
+        float lx = Binds.Axis("Right Stick X") * (invX ? -1f : 1f), ly = Binds.Axis("Right Stick Y") * (invY ? -1f : 1f);
         if (lx != 0f || ly != 0f)
         {
             var e = t.eulerAngles;
@@ -87,12 +101,41 @@ static class Fly
 
     const float LookSpeed = 120f;   // degrees a second at full stick
 
+    // forward / sideways go where the camera looks; up / down are the world's up and down
+    static Vector3 Along(Transform t, Vector3 dir) => t.TransformDirection(new Vector3(dir.x, 0f, dir.z)) + Vector3.up * dir.y;
+
     static void Scroll(PlayerMovement pm, bool flying)
     {
         float s = Input.GetAxis("Mouse ScrollWheel");
         if (s == 0f) return;
         if (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt)) { if (s > 0f) pm.IncreaseFlyCamFOV(); else pm.DecreaseFlyCamFOV(); }
         else if (flying) speedMult = Mathf.Clamp(speedMult * (s > 0f ? 1.2f : 0.8f), 0.1f, 10f);
+    }
+
+    // ---- after a carry the game camera looks where the fly camera looked ----
+    // the game camera orbits nate by PlayerMovement.camAng (yaw) and camOrbit (up / down); measured in recordings, it
+    // looks at yaw camAng + 20 (camAng - 20 over the left shoulder, camRightAmount 1) and pitch 40 - 118 * camOrbit
+    // degrees up (camOrbit 0 is the highest it goes). set again for a few frames in case leaving fly cam resets it
+    static float aimYaw, aimOrbit;
+    static int aimFrames;
+
+    static void AimLike(PlayerMovement pm, Quaternion rot)
+    {
+        var f = rot * Vector3.forward;
+        float yaw = Mathf.Atan2(f.x, f.z) * Mathf.Rad2Deg;
+        float up = Mathf.Asin(Mathf.Clamp(f.y, -1f, 1f)) * Mathf.Rad2Deg;
+        aimYaw = Mathf.Repeat(yaw - 20f + 40f * pm.camRightAmount, 360f);
+        aimOrbit = Mathf.Clamp((40f - up) / 118f, 0f, 1f);
+        aimFrames = 3;
+        AimTick(pm);
+    }
+
+    static void AimTick(PlayerMovement pm)
+    {
+        if (aimFrames <= 0) return;
+        aimFrames--;
+        pm.camAng = aimYaw;
+        pm.camOrbit = aimOrbit;
     }
 
     // ---- carry: nate goes where the camera goes ----
@@ -102,6 +145,7 @@ static class Fly
 
     internal static bool Carrying;
     static Transform root;
+    static Quaternion rootRot;   // the rig's rotation when picked up: the game expects it back
     static Vector3 lastCam;
     static Quaternion lastCamRot;
     static readonly List<(Rigidbody rb, bool kinematic, bool collide)> bodies = new();
@@ -116,8 +160,9 @@ static class Fly
         if (cam == null || puppet == null) return;
         root = CommonParent(pm.transform, puppet.transform);
         if (root == null) { Core.Inst.LoggerInstance.Warning("carry: no common parent for nate's rig"); return; }
-        Core.Inst.LoggerInstance.Msg($"carry: moving {PathOf(root)}");
+        DebugLog.Write($"carry: moving {PathOf(root)}");
         if (cam.IsChildOf(root)) { Core.Inst.LoggerInstance.Warning("carry: the fly camera is inside nate's rig, can't carry"); root = null; return; }
+        rootRot = root.rotation;
         puppetMode = puppet.mode;
         puppet.mode = Il2CppRootMotion.Dynamics.PuppetMaster.Mode.Kinematic;
         bodies.Clear(); colliders.Clear();
@@ -152,6 +197,20 @@ static class Fly
     static void Drop(PlayerMovement pm)
     {
         Carrying = false;
+        // nate is dropped as he hangs, turned with the camera. the rig's root was turned too; left turned, he stands
+        // slanted (the game takes its up from it) until a teleport. so only the root turns back, his parts keep their
+        // place, and the game's heading for his hips turns with him
+        if (root != null)
+        {
+            float turned = Mathf.DeltaAngle(rootRot.eulerAngles.y, root.rotation.eulerAngles.y);
+            var kids = new List<(Transform t, Vector3 p, Quaternion r)>();
+            for (int k = 0; k < root.childCount; k++) { var c = root.GetChild(k); kids.Add((c, c.position, c.rotation)); }
+            root.rotation = rootRot;
+            foreach (var (t, p, r) in kids) t.SetPositionAndRotation(p, r);
+            pm.hipAng = Mathf.Repeat(pm.hipAng + turned, 360f);
+            pm.fpsEulY = Mathf.Repeat(pm.fpsEulY + turned, 360f);
+        }
+        Rezero(root);
         foreach (var (rb, kinematic, collide) in bodies)
         {
             if (rb == null) continue;
@@ -191,7 +250,23 @@ static class Fly
             foreach (var c in t.GetComponentsInChildren<Collider>(true)) { colliders.Add((c, c.enabled)); c.enabled = false; }
     }
 
-    static Transform CommonParent(Transform a, Transform b)
+    // the game keeps nate's rig root (Dudest) at the world origin and some of its code counts on that: moved, his
+    // balance and swim targets end up off by the offset and the ragdoll gets pulled apart (worst while he floats).
+    // whatever moved it (carry, a state saved after one), the root goes back and its children keep their place
+    internal static void Rezero(Transform root)
+    {
+        if (root == null || root.parent != null) return;
+        var off = root.position;
+        if (off.sqrMagnitude < 1e-6f) return;
+        var kids = new List<(Transform t, Vector3 p, Quaternion r)>();
+        for (int k = 0; k < root.childCount; k++) { var c = root.GetChild(k); kids.Add((c, c.position, c.rotation)); }
+        root.position = Vector3.zero;
+        foreach (var (t, p, r) in kids) t.SetPositionAndRotation(p, r);
+        Physics.SyncTransforms();
+        DebugLog.Write($"nate's rig root was {off} off the origin: put back");
+    }
+
+    internal static Transform CommonParent(Transform a, Transform b)
     {
         for (var x = a; x != null; x = x.parent)
             for (var y = b; y != null; y = y.parent)
@@ -201,28 +276,6 @@ static class Fly
 
     static string PathOf(Transform t) => t.parent == null ? t.name : PathOf(t.parent) + "/" + t.name;
 
-    // ---- save / load spot ----
-
-    static readonly Dictionary<int, Vector3> spots = new();
-    static string SpotsFile => Path.Combine(Core.Dir, "spots.txt");
-    static int Slot => SaveGod.me != null ? SaveGod.me.slot : 0;
-
-    static void SaveSpot(PlayerMovement pm)
-    {
-        if (pm.hipPivot == null) return;
-        spots[Slot] = pm.hipPivot.position;
-        SaveSpots();
-        Hud.Flash("SPOT SAVED");
-    }
-
-    internal static bool HasSpot => spots.ContainsKey(Slot);
-
-    internal static void LoadSpot(bool fromMenu = false)
-    {
-        if (!spots.TryGetValue(Slot, out var p)) { Hud.Flash("NO SPOT SAVED (F9)"); return; }
-        if (fromMenu) TeleportFromMenu(p); else Teleport(p);
-    }
-
     internal static void Teleport(Vector3 p)
     {
         var m = Menu.me;
@@ -230,28 +283,173 @@ static class Fly
         m.Teleport(p, false);
     }
 
-    static void LoadSpots()
+    // ---- BabyBlocks cuts long teleports short ----
+    // BabyBlocks clears Menu.teleporting when it stays on for 8 s, its fix for its own stuck loads. loading a save or a
+    // long teleport can take longer than that, and cut off it hangs on the loading screen or leaves the camera stuck.
+    // so its check waits until the flag has been on for 90 s. its other fix (the area loader's lock, after 6 s) is
+    // left alone: never force that lock open, the loader's jobs then run over each other and load things twice
+    // (nate falls through the world). stuck loads are mended by LoadFix instead
+
+    const float RealLoadTime = 90f;
+    static float teleportingSince = -1f;
+
+    // once a frame
+    internal static void TrackLoads()
     {
-        try
+        Since(Menu.me != null && Menu.me.teleporting, ref teleportingSince);
+        if (teleportingSince >= 0f && Time.unscaledTime - teleportingSince > 10f && Time.unscaledTime - lastLoaderReport > 10f)
         {
-            if (!File.Exists(SpotsFile)) return;
-            foreach (var line in File.ReadAllLines(SpotsFile))
-            {
-                var f = line.Split(' ');
-                if (f.Length != 4) continue;
-                var c = CultureInfo.InvariantCulture;
-                spots[int.Parse(f[0], c)] = new Vector3(float.Parse(f[1], c), float.Parse(f[2], c), float.Parse(f[3], c));
-            }
+            lastLoaderReport = Time.unscaledTime;
+            LoaderReport($"teleport running {Time.unscaledTime - teleportingSince:0} s");
         }
-        catch { }
+        else if (teleportingSince < 0f) lastLoaderReport = -100f;
     }
 
-    static void SaveSpots()
+    // what's still loading around the loader's spot: area chunks (the ground), prop cells (props you can touch), prop
+    // visuals (looks only)
+    internal static void Pending(out int chunks, out int cells, out int visuals)
     {
-        var c = CultureInfo.InvariantCulture;
-        var lines = new List<string>();
-        foreach (var kv in spots) lines.Add(string.Format(c, "{0} {1} {2} {3}", kv.Key, kv.Value.x, kv.Value.y, kv.Value.z));
-        try { File.WriteAllLines(SpotsFile, lines); } catch { }
+        chunks = cells = visuals = 0;
+        var rl = BestRegionLoader.me;
+        if (rl == null) return;
+        var cm = rl.chunkMap;
+        if (cm != null)
+            for (int i = 0; i < cm.Length; i++)
+            {
+                var c = cm[i];
+                if (c != null && c.shouldLoad && (int)c.loadState != 2) chunks++;
+            }
+        var pc = rl.propLoaderMap;
+        if (pc != null && Native(rl, 0x208, out var want, out int wn))
+            for (int i = 0; i < pc.Length && i < wn; i++)
+                if (System.Runtime.InteropServices.Marshal.ReadByte(want, i) != 0 && pc[i] != null && (int)pc[i].loadState != 2) cells++;
+        if (Native(rl, 0x218, out var rend, out int rn) && Native(rl, 0x1D0, out var lod, out int ln))
+            for (int i = 0; i < rn && i < ln; i++)
+                if (System.Runtime.InteropServices.Marshal.ReadByte(rend, i) != 0 && System.Runtime.InteropServices.Marshal.ReadInt32(lod, i * 4) != 2) visuals++;
+    }
+
+    // ---- what a hung teleport waits for ----
+    // a teleport waits for BestRegionLoader.fullyLoaded, which the loader clears every frame while any of these isn't
+    // done: an area chunk it wants (or wants gone), a prop cell near nate, a prop's render data. the report names them,
+    // in the debug log
+    static float lastLoaderReport = -100f;
+    static readonly string[] StateName = { "unloaded", "loading", "loaded", "unloading" };
+
+    internal static void LoaderReport(string why)
+    {
+        var rl = BestRegionLoader.me;
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"loader ({why}): fullyLoaded {BestRegionLoader.fullyLoaded}, lock {BestRegionLoader.somebodyLoading}");
+        sb.Append($" (last taken by {BestRegionLoader.whosLoading ?? "-"}, free {BestRegionLoader.framesSinceSomebodyLoading} frames)");
+        if (rl == null) { sb.Append(", no loader"); Report(sb.ToString()); return; }
+        var lt = rl.loadingTransform;
+        sb.Append(lt != null ? $", loads around {lt.name} {lt.position}" : ", loads around nothing");
+        if (rl.off) sb.Append(", loader off");
+
+        var chunks = rl.chunkMap;
+        int nc = 0;
+        var cs = new System.Text.StringBuilder();
+        if (chunks != null)
+            for (int i = 0; i < chunks.Length; i++)
+            {
+                var c = chunks[i];
+                if (c == null) continue;
+                int st = (int)c.loadState;
+                if (c.shouldLoad ? st == 2 : st == 0) continue;
+                if (nc++ < 8) cs.Append($" #{c.index} {Name(st)}{(c.shouldLoad ? "" : " (wanted gone)")}");
+            }
+        sb.Append($"\n  chunks not done: {nc}{cs}");
+
+        // the loader's NativeArrays aren't usable through the interop: read them raw (offsets from the game's 2022.3 build)
+        var cells = rl.propLoaderMap;
+        int np = 0;
+        var ps = new System.Text.StringBuilder();
+        if (cells != null && Native(rl, 0x208, out var want, out int wn))
+            for (int i = 0; i < cells.Length && i < wn; i++)
+            {
+                if (System.Runtime.InteropServices.Marshal.ReadByte(want, i) == 0) continue;
+                var c = cells[i];
+                if (c == null || (int)c.loadState == 2) continue;
+                if (np++ < 8) ps.Append($" #{c.cellIndex} {Name((int)c.loadState)}");
+            }
+        sb.Append($"\n  prop cells not done: {np}{ps}");
+
+        int nl = 0;
+        var ls = new System.Text.StringBuilder();
+        if (Native(rl, 0x218, out var rend, out int rn) && Native(rl, 0x1D0, out var lod, out int ln))
+            for (int i = 0; i < rn && i < ln; i++)
+            {
+                if (System.Runtime.InteropServices.Marshal.ReadByte(rend, i) == 0) continue;
+                int st = System.Runtime.InteropServices.Marshal.ReadInt32(lod, i * 4);
+                if (st == 2) continue;
+                if (nl++ < 8) ls.Append($" #{i} {Name(st)}");
+            }
+        sb.Append($"\n  prop render data not done: {nl}{ls}");
+        Report(sb.ToString());
+    }
+
+    static string Name(int st) => st >= 0 && st < StateName.Length ? StateName[st] : st.ToString();
+
+    // NativeArray<T> in a field: buffer pointer, then int length
+    internal static bool Native(BestRegionLoader rl, int offset, out System.IntPtr buf, out int len)
+    {
+        buf = System.Runtime.InteropServices.Marshal.ReadIntPtr(rl.Pointer + offset);
+        len = System.Runtime.InteropServices.Marshal.ReadInt32(rl.Pointer + offset + 8);
+        return buf != System.IntPtr.Zero && len > 0;
+    }
+
+    static void Report(string s) => DebugLog.Write(s);
+
+    // BestRegionLoader.somebodyLoading is the area loader's one lock: a prop load takes it (only outside teleports) and
+    // gives it back when the load ends cleanly. a load that errors keeps it. only let go when everything is reloaded
+    // anyway (a full load)
+    internal static void ReleaseLoaderLock(string why)
+    {
+        if (!BestRegionLoader.somebodyLoading) return;
+        BestRegionLoader.somebodyLoading = false;
+        DebugLog.Write($"the area loader's lock was stuck ({why}, a prop load that never finished): let go");
+    }
+
+    static void Since(bool on, ref float since)
+    {
+        if (!on) since = -1f;
+        else if (since < 0f) since = Time.unscaledTime;
+    }
+
+    // BabyBlocks checks the flag every frame (Core.WatchMenuTeleporting, from its OnUpdate) and clears it after 8 s.
+    // the game's flags are plain fields (their setters can't be patched), so that check is skipped while the flag has
+    // been on for less than 90 s; it runs as usual otherwise
+    internal static void GuardBabyBlocks(HarmonyLib.Harmony h, MelonLoader.MelonLogger.Instance log)
+    {
+        System.Type core = null;
+        foreach (var a in System.AppDomain.CurrentDomain.GetAssemblies())
+            if (a.GetName().Name == "BabyBlocks")
+                foreach (var t in AccessTools.GetTypesFromAssembly(a))
+                    if (AccessTools.DeclaredMethod(t, "WatchMenuTeleporting") != null) { core = t; break; }
+        if (core == null) return;
+        var tele = AccessTools.DeclaredMethod(core, "WatchMenuTeleporting");
+        h.Patch(tele, prefix: new HarmonyMethod(typeof(Fly), nameof(WatchTeleporting)));
+        log.Msg($"BabyBlocks can only clear a teleport after {RealLoadTime:0} s");
+    }
+
+    // the flag as it is now (BabyBlocks' update can come before ours in a frame): off, its check runs and resets its
+    // own timer; on, it waits for 90 s from when we first saw it on (or from now)
+    static bool WatchTeleporting() => Allowed(Menu.me != null && Menu.me.teleporting, ref teleportingSince, "Menu.teleporting");
+
+    static float lastBlockLog = -100f;
+
+    static bool Allowed(bool on, ref float since, string what, float limit = RealLoadTime)
+    {
+        if (!on) return true;
+        if (since < 0f) since = Time.unscaledTime;
+        if (Time.unscaledTime - since >= limit) return true;
+        // it would clear it at 8 s: say so once in a while
+        if (Time.unscaledTime - since > 6f && Time.unscaledTime - lastBlockLog > 10f)
+        {
+            lastBlockLog = Time.unscaledTime;
+            DebugLog.Write($"kept {what} on past BabyBlocks' limit ({Time.unscaledTime - since:0} s so far)");
+        }
+        return false;
     }
 
     // ---- teleporting out of fly cam leaves nate frozen ----

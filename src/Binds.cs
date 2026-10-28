@@ -20,7 +20,7 @@ static class Binds
         public KeyCode KeyCode => Enum.TryParse<KeyCode>(Key.Value, true, out var k) ? k : KeyCode.None;
     }
 
-    internal static Bind Fly, Save, Load;
+    internal static Bind Fly, Save, Load, Sunglasses, MarkAngle;
     internal static readonly List<Bind> All = new();
     internal static MelonPreferences_Entry<string> Modifier;
 
@@ -40,8 +40,13 @@ static class Binds
     {
         Modifier = Core.Cat.CreateEntry("PadModifier", "B", "Gamepad modifier", "Hold this gamepad button, then press a control's button.");
         Fly = Add("Fly", "Fly", "F1", "D-Pad Up");
-        Save = Add("SaveSpot", "Save spot", "F9", "D-Pad Left");
-        Load = Add("LoadSpot", "Load spot", "F10", "D-Pad Right");
+        Save = Add("SaveSpot", "Save state", "F9", "D-Pad Left");
+        Load = Add("LoadSpot", "Load state", "F10", "D-Pad Right");
+        Sunglasses = Add("Sunglasses", "Sunglasses", "F6", "D-Pad Down");
+        // R3 alone is the minimap's calibrate (and F6-F8 its keys), F12 is steam's screenshot: B + R3 and F5 are free.
+        // early test builds had F7: moved once
+        MarkAngle = Add("MarkAngle", "Mark angle", "F5", "Right Stick Button");
+        if (MarkAngle.Key.Value == "F7") MarkAngle.Key.Value = "F5";
     }
 
     internal static void ResetAll()
@@ -71,7 +76,7 @@ static class Binds
         CaptureTick();
     }
 
-    internal static bool Pressed(Bind b) => Capturing == null && (KeyDown(b) || down.Contains(b.Pad.Value));
+    internal static bool Pressed(Bind b) => Capturing == null && !Typing.Busy && (KeyDown(b) || down.Contains(b.Pad.Value));
     static bool KeyDown(Bind b) { var k = b.KeyCode; return k != KeyCode.None && Input.GetKeyDown(k); }
     internal static bool IsBoundKey(KeyCode k) { foreach (var b in All) if (b.KeyCode == k) return true; return false; }
 
@@ -175,7 +180,9 @@ static class Binds
     // while a remap waits, the menu (and the game) see no keys and no gamepad, so back / escape don't close the page
     static bool ownRead;
     static int muteUntil = -1;
-    static bool Muted => !ownRead && (Capturing != null || Time.frameCount <= muteUntil);
+    static bool Muted => !ownRead && (Capturing != null || Typing.Active || Time.frameCount <= muteUntil);
+    internal static void MuteFor(int frames) => muteUntil = Math.Max(muteUntil, Time.frameCount + frames);
+    internal static bool RawKeyDown(KeyCode k) { ownRead = true; try { return Input.GetKeyDown(k); } finally { ownRead = false; } }
 
     [HarmonyPatch]
     static class MuteKeys
@@ -226,7 +233,7 @@ static class Binds
     }
 
     // ---- the minimap mod reads the d-pad straight from the pad every frame; while B is held it's ours. it also
-    // doesn't know about the title screen or cutscenes (hat ones too), so it's muted there as well ----
+    // doesn't know about the title screen, cutscenes (hat ones too) or flying, so it's muted there as well ----
 
     internal static void MuteMinimap(HarmonyLib.Harmony h, MelonLogger.Instance log)
     {
@@ -241,14 +248,33 @@ static class Binds
             n++;
         }
         if (n > 0) log.Msg($"minimap's gamepad input is muted while {Modifier.Value} is held, on the title screen and in cutscenes");
+        // all of its input, keys too, while a text is typed on a page (its keys, M for the map and the rest, are read
+        // in its OnUpdate itself: the whole update waits while typing)
+        foreach (var name in new[] { "OnUpdate", "HandleGameplayInput", "HandleHelpInput", "HandleFullMapInput", "HandleJourneyInput", "HandleCalibrationInput", "HandleStickClicks" })
+        {
+            var m = AccessTools.Method(t, name);
+            if (m != null) h.Patch(m, prefix: new HarmonyMethod(typeof(Binds), nameof(MinimapTyping)));
+        }
     }
 
     static bool MinimapPrefix() => !ModHeld && !MinimapOff();
+    static bool MinimapTyping() => !Typing.MenuBlocked;
 
+    static string offWhy = "";
+
+    // (the game can leave playingCutscene set after a cutscene, so it isn't asked)
     static bool MinimapOff()
     {
         var m = Il2Cpp.Menu.me;
-        if (Il2Cpp.PlayerMovement.me == null || m == null) return true;
-        return m.titleAreaActive || m.inCutscene || m.inNonInteractiveCutscene || m.playingCutscene != null;
+        string why = Il2Cpp.PlayerMovement.me == null || m == null ? "no nate" : m.titleAreaActive ? "title screen"
+            : m.inCutscene ? "Menu.inCutscene" : m.inNonInteractiveCutscene ? "Menu.inNonInteractiveCutscene"
+            // flying, the sticks and their clicks are the fly camera's (the minimap's first person mode is on a stick click)
+            : PracticeTools.Fly.Flying || Il2Cpp.PlayerMovement.me.inFlyCam ? "flying" : "";
+        if (why != offWhy)
+        {
+            DebugLog.Write(why == "" ? "minimap gamepad input back on" : $"minimap gamepad input muted ({why})");
+            offWhy = why;
+        }
+        return why != "";
     }
 }

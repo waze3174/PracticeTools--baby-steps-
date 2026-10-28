@@ -14,10 +14,30 @@ namespace PracticeTools;
 // a crash, or from the title screen) carries on: splits after the loaded play time are undone. another save slot
 // stops counting until the next
 // new game. names, campfires, best run and best segments live in UserData/PracticeTools/splits.txt
-// (name|campfire or end|best run split|best segment)
+// (name|campfire or end|best run split|best segment|any% best run split|any% best segment|any% gone).
+// two sets of bests, both kept up on every run, the menu picks which one shows: full run (every split, a skipped one
+// just gives its time to the next) and any% (a split a run skipped is gone for good: skipping it is its best, it's
+// left out of the list, its best segment folds into the next split's, so best run and sum of best only count splits
+// still done)
 static class Splits
 {
-    internal class Split { public string Name; public int Camp = -1; public float Pb = -1f, Gold = -1f, Time = -1f; public bool Skipped; }   // Camp -1 = the end
+    internal class Split   // Camp -1 = the end
+    {
+        public string Name; public int Camp = -1; public float Time = -1f; public bool Skipped;
+        public float FullPb = -1f, FullGold = -1f, AnyPb = -1f, AnyGold = -1f;
+        public bool Gone;   // any%: a run skipped it
+        // the bests the menu shows
+        public float Pb => AnyPct ? AnyPb : FullPb;
+        public float Gold => AnyPct ? AnyGold : FullGold;
+    }
+    internal static bool AnyPct => Core.AnyPercent.Value;
+    internal static bool Hidden(int i) => AnyPct && List[i].Gone;
+
+    // the split being run, as shown (any% leaves the gone ones out)
+    internal static int ShownCurrent
+    {
+        get { int i = Current; while (i < List.Count && Hidden(i)) i++; return i; }
+    }
     internal static readonly List<Split> List = new();
     internal static int Current;          // the split being run
     internal static bool Running;         // a run from a new game is going
@@ -50,8 +70,11 @@ static class Splits
                     if (f.Length < 1 || f[0].Trim() == "" || f[0].StartsWith("#")) continue;
                     var s = new Split { Name = f[0].Trim() };
                     if (f.Length > 1 && int.TryParse(f[1].Trim(), NumberStyles.Integer, c, out var camp)) s.Camp = camp;
-                    if (f.Length > 2 && float.TryParse(f[2], NumberStyles.Float, c, out var pb)) s.Pb = pb;
-                    if (f.Length > 3 && float.TryParse(f[3], NumberStyles.Float, c, out var g)) s.Gold = g;
+                    if (f.Length > 2 && float.TryParse(f[2], NumberStyles.Float, c, out var pb)) s.FullPb = pb;
+                    if (f.Length > 3 && float.TryParse(f[3], NumberStyles.Float, c, out var g)) s.FullGold = g;
+                    if (f.Length > 4 && float.TryParse(f[4], NumberStyles.Float, c, out var apb)) s.AnyPb = apb;
+                    if (f.Length > 5 && float.TryParse(f[5], NumberStyles.Float, c, out var ag)) s.AnyGold = ag;
+                    s.Gone = f.Length > 6 && f[6].Trim() == "1";
                     List.Add(s);
                 }
         }
@@ -64,16 +87,22 @@ static class Splits
         var c = CultureInfo.InvariantCulture;
         var lines = new List<string>
         {
-            "# name|campfire|best run split|best segment (seconds, -1 = none)",
+            "# name|campfire|best run split|best segment|any% best run split|any% best segment|any% gone (seconds, -1 = none)",
             "# a split ends when nate reaches that campfire (1 to 8 start the episodes, 9 = thanks for playing), end = the credits",
+            "# any% gone (1): a run skipped it, so any% leaves it out and its best segment is part of the next one's",
         };
-        foreach (var s in List) lines.Add(string.Format(c, "{0}|{1}|{2:0.000}|{3:0.000}", s.Name, s.Camp < 0 ? "end" : s.Camp.ToString(c), s.Pb, s.Gold));
+        foreach (var s in List)
+            lines.Add(string.Format(c, "{0}|{1}|{2:0.000}|{3:0.000}|{4:0.000}|{5:0.000}|{6}", s.Name, s.Camp < 0 ? "end" : s.Camp.ToString(c),
+                s.FullPb, s.FullGold, s.AnyPb, s.AnyGold, s.Gone ? 1 : 0));
         try { File.WriteAllLines(File_, lines); } catch { }
     }
 
+    // the bests the menu shows (any% also brings its gone splits back)
     internal static void ResetBests()
     {
-        foreach (var s in List) { s.Pb = -1f; s.Gold = -1f; }
+        foreach (var s in List)
+            if (AnyPct) { s.AnyPb = -1f; s.AnyGold = -1f; s.Gone = false; }
+            else { s.FullPb = -1f; s.FullGold = -1f; }
         Save();
     }
 
@@ -87,12 +116,17 @@ static class Splits
         if (!loggedCamps) LogCamps();
 
         // a new game: play time starts again near 0
+        int slot = Slot;
         if (Now < 3f && (last < 0f || last > Now + 0.5f || !Running && !Finished)) Start();
-        // a save loaded (from the title screen, or play time going back): the run's own slot carries on from there
-        else if (last < 0f || Now < last - 1f) Loaded();
+        // a save loaded (from the title screen, another slot, or play time jumping back or ahead): the run's own slot
+        // carries on from there. a save with more play time than the last one wasn't noticed before, so a run went on
+        // into another slot's save (a friend's run on slot 9 went on into my 12 h testing save on slot 2)
+        else if (last < 0f || Now < last - 1f || Now > last + 5f || slot != lastSlot) Loaded();
         last = Now;
-
+        lastSlot = slot;
     }
+
+    static int lastSlot = -2;
 
     static void Start()
     {
@@ -142,6 +176,44 @@ static class Splits
         for (int i = done; i < List.Count; i++) List[i].Skipped = false;
         Current = done;
         SaveRun();
+    }
+
+    // a savestate keeps the run as it was (run|running|finished|current|slot, split|i|time|skipped), only the run on
+    // the save it's taken from; a full load puts it back on the slot it loads into, and the reload then carries on
+    // from there. states without the slot (from older versions) aren't trusted: the bug above put a run into another
+    // save's states
+    internal static void Snapshot(System.Text.StringBuilder sb)
+    {
+        var c = CultureInfo.InvariantCulture;
+        bool ours = runSlot == Slot;
+        sb.Append(string.Format(c, "run|{0}|{1}|{2}|{3}\n", Running && ours ? 1 : 0, Finished && ours ? 1 : 0, Current, runSlot));
+        for (int i = 0; i < List.Count; i++) sb.Append(string.Format(c, "split|{0}|{1:0.000}|{2}\n", i, List[i].Time, List[i].Skipped ? 1 : 0));
+    }
+
+    internal static void Restore(string[] lines, int slot)
+    {
+        var c = CultureInfo.InvariantCulture;
+        bool found = false;
+        foreach (var l in lines)
+        {
+            var f = l.Split('|');
+            if (f[0] == "run" && f.Length < 5) { Core.Inst.LoggerInstance.Msg("full load: the state is from before runs kept their slot: run left as it was"); return; }
+            if (f[0] == "run")
+            {
+                found = true;
+                Running = f[1] == "1"; Finished = f[2] == "1"; Current = int.Parse(f[3], c); runSlot = slot;
+            }
+            else if (f[0] == "split" && f.Length >= 4 && int.TryParse(f[1], NumberStyles.Integer, c, out int i) && i >= 0 && i < List.Count)
+            {
+                List[i].Time = float.TryParse(f[2], NumberStyles.Float, c, out var t) ? t : -1f;
+                List[i].Skipped = f[3].Trim() == "1";
+            }
+        }
+        if (!found) return;   // a state from before runs were kept
+        Current = Mathf.Clamp(Current, 0, List.Count);
+        if (Finished) FinishedAt = -100f;
+        SaveRun();
+        Core.Inst.LoggerInstance.Msg($"full load: the run as it was put back ({(Running ? $"split {Current + 1}" : Finished ? "finished" : "no run")})");
     }
 
     // run.txt: slot, then one line per split: time (-1 = not yet) | skipped
@@ -198,12 +270,15 @@ static class Splits
         Mark(i);
     }
 
-    // a segment's time: from the last split that was reached (skipped ones in between count towards it)
-    internal static float Segment(int i)
+    // a segment's time: from the last split that was reached (skipped ones in between count towards it; in any%, the
+    // gone ones too, even reached)
+    internal static float Segment(int i) => Segment(i, AnyPct);
+
+    static float Segment(int i, bool any)
     {
         var s = List[i];
         if (s.Time < 0f) return -1f;
-        for (int j = i - 1; j >= 0; j--) if (List[j].Time >= 0f) return s.Time - List[j].Time;
+        for (int j = i - 1; j >= 0; j--) if (List[j].Time >= 0f && !(any && List[j].Gone)) return s.Time - List[j].Time;
         return s.Time;
     }
 
@@ -212,18 +287,42 @@ static class Splits
         if (i != Current || Now < 0f) return;
         var s = List[i];
         s.Time = Now;
-        float seg = Segment(i);
-        if (seg >= 0f && (s.Gold < 0f || seg < s.Gold)) s.Gold = seg;
+        float seg = Segment(i, false);
+        if (seg >= 0f && (s.FullGold < 0f || seg < s.FullGold)) s.FullGold = seg;
+        AnyGold(i);
         Current++;
         if (Current >= List.Count)
         {
             Finished = true;
             FinishedAt = UnityEngine.Time.unscaledTime;
             var end = List[List.Count - 1];
-            if (end.Pb < 0f || end.Time < end.Pb) foreach (var x in List) x.Pb = x.Time;
+            if (end.FullPb < 0f || end.Time < end.FullPb) foreach (var x in List) x.FullPb = x.Time;
+            if (end.AnyPb < 0f || end.Time < end.AnyPb) foreach (var x in List) x.AnyPb = x.Time;
         }
         Save();
         SaveRun();
+    }
+
+    // any%: the splits this run skipped since the last one done are gone from now on, and their best segments fold
+    // into this one's (the sum of best stays a sum of best: theirs + this one's, or this run's time if that's less)
+    static void AnyGold(int i)
+    {
+        var s = List[i];
+        if (s.Gone) return;   // a gone split reached anyway: its segment goes to the next split shown
+        float fold = s.AnyGold;
+        bool folded = false;
+        for (int j = i - 1; j >= 0 && !(List[j].Time >= 0f && !List[j].Gone); j--)
+        {
+            var p = List[j];
+            if (p.Gone || !p.Skipped) continue;
+            p.Gone = true; folded = true;
+            fold = fold >= 0f && p.AnyGold >= 0f ? fold + p.AnyGold : -1f;
+            p.AnyGold = -1f;
+            Core.Inst.LoggerInstance.Msg($"splits: {p.Name} skipped: any% leaves it out from now on");
+        }
+        if (folded) s.AnyGold = fold;
+        float seg = Segment(i, true);
+        if (seg >= 0f && (s.AnyGold < 0f || seg < s.AnyGold)) s.AnyGold = seg;
     }
 
     static void LogCamps()
@@ -234,7 +333,7 @@ static class Splits
         for (int i = 0; i < m.campfireDatas.Length; i++)
         {
             var d = m.campfireDatas[i];
-            if (d != null) Core.Inst.LoggerInstance.Msg($"campfire {i}: {d.title} at {d.pos}");
+            if (d != null) DebugLog.Write($"campfire {i}: {d.title} at {d.pos}");
         }
     }
 
