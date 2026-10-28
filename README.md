@@ -7,7 +7,7 @@ if you have flyandquicksave (the original or my freeze fix), caleb's in-game tim
 ## keys
 
 - **F1** fly cam. two modes (fly tab):
-  - **free cam**: fly around with WASD, Q / E down / up, shift / ctrl faster, scroll for speed, alt + scroll to zoom. left click teleports nate to the camera
+  - **free cam**: fly around with WASD, space / ctrl up / down (E / Q work too), shift faster, hold the right mouse button for much faster, scroll for speed, alt + scroll to zoom. left click teleports nate to the camera
   - **carry nate**: nate (and what he's holding, and his hat) hangs in front of the camera with no collisions and follows you through anything. F1 again drops him where he is
 - **F9** save a state in the picked savestate slot
 - **F10** load it

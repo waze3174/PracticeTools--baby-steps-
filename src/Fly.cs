@@ -5,8 +5,9 @@ using UnityEngine;
 
 namespace PracticeTools;
 
-// F1 / B + d-pad up fly cam (the game's own, moved with WASD / QE, shift and ctrl faster, scroll for speed, alt + scroll
-// for zoom; on a gamepad left stick, RT / LT up / down, L3 faster, right stick to look).
+// F1 / B + d-pad up fly cam (the game's own, moved with WASD, space / ctrl (or E / Q) up / down, shift faster, right
+// mouse button much faster, scroll for speed, alt + scroll for zoom; on a gamepad left stick, RT / LT up / down, L3
+// faster, right stick to look).
 // two modes: free cam (left click teleports nate to it) or carry (nate hangs in front of the camera, no physics or
 // collisions, dropped where he is on F1 again). F9 saves nate's spot, F10 teleports him back to it, per save slot.
 // the keys and buttons are remappable (Binds)
@@ -53,7 +54,16 @@ static class Fly
         if (Menu.me != null && Menu.me.paused) Menu.me.UnPause();
     }
 
+    // our own key reads while flying get past BlockKeys (the game's don't)
+    static bool own;
+
     static void Move(Transform t)
+    {
+        own = true;
+        try { MoveCam(t); } finally { own = false; }
+    }
+
+    static void MoveCam(Transform t)
     {
         var dir = Vector3.zero;
         if (Input.GetKey(KeyCode.W)) dir += Vector3.forward;
@@ -62,10 +72,13 @@ static class Fly
         if (Input.GetKey(KeyCode.D)) dir += Vector3.right;
         if (Input.GetKey(KeyCode.E)) dir += Vector3.up;
         if (Input.GetKey(KeyCode.Q)) dir += Vector3.down;
+        // space and ctrl only move ours (the game's fly cam doesn't read space, and reads ctrl as a speed change)
+        if (Input.GetKey(KeyCode.Space)) dir += Vector3.up;
+        if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)) dir += Vector3.down;
         if (dir.sqrMagnitude > 1f) dir.Normalize();
         bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-        bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
-        float mult = shift && ctrl ? 7f : ctrl ? 5f : shift ? 2f : 1f;
+        bool fast = Input.GetMouseButton(1);
+        float mult = shift && fast ? 7f : fast ? 5f : shift ? 2f : 1f;
         t.position += Along(t, dir) * (BaseSpeed * speedMult * mult * Time.unscaledDeltaTime);
 
         // gamepad: left stick moves, RT up / LT down, L3 held 5x faster, right stick looks (the game's fly cam only
@@ -478,8 +491,8 @@ static class Fly
         if (me.anim != null && me.anim.speed == 0f) me.anim.speed = 1f;
     }
 
-    // while flying, the game only sees the fly keys, the mouse and left click (teleport; not while carrying), and nate
-    // doesn't get the gamepad's sticks and triggers (they fly the camera)
+    // while flying, the game only sees the fly keys (not ctrl: that's down here), the mouse and left click (teleport;
+    // not while carrying), and nate doesn't get the gamepad's sticks and triggers (they fly the camera)
     static bool inGetInput;
 
     [HarmonyPatch(typeof(PlayerMovement), "GetInput")]
@@ -500,31 +513,31 @@ static class Fly
     {
         static bool Allowed(KeyCode k) =>
             k is KeyCode.W or KeyCode.A or KeyCode.S or KeyCode.D or KeyCode.Q or KeyCode.E
-              or KeyCode.LeftShift or KeyCode.RightShift or KeyCode.LeftControl or KeyCode.RightControl
+              or KeyCode.LeftShift or KeyCode.RightShift
               or KeyCode.LeftAlt or KeyCode.RightAlt || Binds.IsBoundKey(k);
 
         static bool AllowedDown(KeyCode k) => Binds.IsBoundKey(k);
 
         [HarmonyPrefix, HarmonyPatch(typeof(Input), nameof(Input.GetKey), typeof(KeyCode))]
-        static bool GetKey(KeyCode key, ref bool __result) { if (!Flying || Allowed(key)) return true; __result = false; return false; }
+        static bool GetKey(KeyCode key, ref bool __result) { if (!Flying || own || Allowed(key)) return true; __result = false; return false; }
 
         [HarmonyPrefix, HarmonyPatch(typeof(Input), nameof(Input.GetKeyDown), typeof(KeyCode))]
-        static bool GetKeyDown(KeyCode key, ref bool __result) { if (!Flying || AllowedDown(key)) return true; __result = false; return false; }
+        static bool GetKeyDown(KeyCode key, ref bool __result) { if (!Flying || own || AllowedDown(key)) return true; __result = false; return false; }
 
         [HarmonyPrefix, HarmonyPatch(typeof(Input), nameof(Input.GetAxis), typeof(string))]
         static bool GetAxis(string axisName, ref float __result)
         {
-            if (!Flying || axisName is "Mouse ScrollWheel" or "Mouse X" or "Mouse Y") return true;
+            if (!Flying || own || axisName is "Mouse ScrollWheel" or "Mouse X" or "Mouse Y") return true;
             __result = 0f; return false;
         }
 
         [HarmonyPrefix, HarmonyPatch(typeof(Input), nameof(Input.GetMouseButton), typeof(int))]
-        static bool GetMouseButton(int button, ref bool __result) { if (!Flying || button == 0 && !Carrying) return true; __result = false; return false; }
+        static bool GetMouseButton(int button, ref bool __result) { if (!Flying || own || button == 0 && !Carrying) return true; __result = false; return false; }
 
         [HarmonyPrefix, HarmonyPatch(typeof(Input), nameof(Input.GetMouseButtonDown), typeof(int))]
-        static bool GetMouseButtonDown(int button, ref bool __result) { if (!Flying || button == 0 && !Carrying) return true; __result = false; return false; }
+        static bool GetMouseButtonDown(int button, ref bool __result) { if (!Flying || own || button == 0 && !Carrying) return true; __result = false; return false; }
 
         [HarmonyPrefix, HarmonyPatch(typeof(Input), nameof(Input.GetMouseButtonUp), typeof(int))]
-        static bool GetMouseButtonUp(int button, ref bool __result) { if (!Flying || button == 0 && !Carrying) return true; __result = false; return false; }
+        static bool GetMouseButtonUp(int button, ref bool __result) { if (!Flying || own || button == 0 && !Carrying) return true; __result = false; return false; }
     }
 }
